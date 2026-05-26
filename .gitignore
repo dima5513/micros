@@ -1,0 +1,12 @@
+# ide
+**/.vscode
+**/.idea
+*.user
+*.DotSettings.user
+
+# Сборка
+**/bin
+**/obj
+
+# Окружение
+**/.env
