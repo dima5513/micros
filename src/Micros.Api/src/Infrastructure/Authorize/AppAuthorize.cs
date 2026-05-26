@@ -1,4 +1,5 @@
 using Micros.Api.Infrastructure.Jwt;
+using Micros.Core.api;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 
 namespace Micros.Api.Infrastructure.Authorize;
@@ -7,9 +8,16 @@ public static class AppAuthorize
 {
     public const string AccessScheme = "AccessScheme";
     public const string RefreshScheme = "RefreshScheme";
+    public const string S2sScheme = "S2sScheme";
 
     public static void AddAppAuthorize(this IServiceCollection services, IConfiguration configuration)
     {
+
+        services.AddOptions<S2sOptions>()
+            .Bind(configuration)
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
         services.AddOptions<JwtOptions>()
             .Bind(configuration)
             .ValidateDataAnnotations()
@@ -59,6 +67,7 @@ public static class AppAuthorize
                         return Task.CompletedTask;
                     }
                 };
-            });
+            })
+            .AddScheme<S2sAuthenticationOptions, S2sAuthenticationHandler>(S2sScheme, _ => {});
     }
 }
