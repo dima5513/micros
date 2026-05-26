@@ -1,0 +1,6 @@
+@Micros.TgBot_HostAddress = http://localhost:5049
+
+GET {{Micros.TgBot_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
