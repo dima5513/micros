@@ -1,0 +1,155 @@
+﻿services:
+  
+  backend-api:
+    build:
+      context: .
+      dockerfile: src/Micros.Api/Dockerfile
+    container_name: backend-api
+    restart: always
+    ports:
+      - "5090:8445"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      
+      POSTGRES_HOST: backend-postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
+      JWT_ACCESS_SECURITY_KEY: ${JWT_ACCESS_SECURITY_KEY}
+      JWT_ACCESS_EXPIRE_HOURS: ${JWT_ACCESS_EXPIRE_HOURS}
+      JWT_REFRESH_SECURITY_KEY: ${JWT_REFRESH_SECURITY_KEY}
+      JWT_REFRESH_EXPIRE_HOURS: ${JWT_REFRESH_EXPIRE_HOURS}
+      
+      S2S_API_KEY: ${S2S_API_KEY}
+      
+    depends_on:
+      backend-postgres:
+        condition: service_healthy
+    networks:
+      - backend-network
+    
+  tg-bot:
+    build:
+      context: .
+      dockerfile: src/Micros.TgBot/Dockerfile
+    container_name: tg-bot
+    restart: always
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      
+      TELEGRAM_BOT_API_KEY: ${TELEGRAM_BOT_API_KEY}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - backend-network
+  
+  hh-parser:
+    build:
+      context: .
+      dockerfile: src/Micros.HHParser/Dockerfile
+    container_name: hh-parser
+    restart: always
+    environment:
+      DOTNET_ENVIRONMENT: Development
+      
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      BACKEND_URL: "http://backend-api:8445"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      
+      S2S_API_KEY: ${S2S_API_KEY}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend-network
+  
+  backend-postgres:
+    image: postgres:16-alpine
+    container_name: backend-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "2048m"
+        max-file: "2"
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+    networks:
+      - backend-network
+  
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: backend-rabbitmq
+    ports:
+      - "${RABBITMQ_PORT}:5672"
+      - "${RABBITMQ_PORT_UI}:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - backend-network
+    restart: always
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  
+  redis:
+    image: redis:7-alpine
+    container_name: backend-redis
+    restart: always
+    ports:
+      - "${REDIS_PORT}:6379"
+    networks:
+      - backend-network
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+    external: true
+    name: fluent-migrator-ef-core_pgdata
+  rabbitmq_data:
+
+networks:
+  backend-network:
+    name: backend-network
+    driver: bridge
