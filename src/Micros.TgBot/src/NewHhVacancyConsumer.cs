@@ -11,9 +11,9 @@ public class NewHhVacancyConsumer(
 )
     : IRabbitMqConsumer
 {
-    public string Exchange => "hh.vacancies";
+    public string Exchange => HHVacancyTopology.Exchange;
     public string QueueName => "tgbot.new-vacancies";
-    public string RoutingKey => "hh.new-vacancy";
+    public string RoutingKey => HHVacancyTopology.NewVacancyKey;
 
     public async Task HandleAsync(string body, CancellationToken ct)
     {
