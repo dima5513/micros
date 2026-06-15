@@ -1,6 +1,4 @@
-using System.Net.Http.Headers;
 using DotNetEnv;
-using Micros.Core.api;
 using Micros.Core.rabbitmq;
 using Micros.Core.redis;
 using Micros.HHParser;
@@ -9,11 +7,6 @@ using Microsoft.Extensions.Options;
 Env.TraversePath().Load();
 
 var builder = Host.CreateApplicationBuilder(args);
-
-builder.Services.AddOptions<ApiOptions>()
-    .Bind(builder.Configuration)
-    .ValidateDataAnnotations()
-    .ValidateOnStart();
 
 builder.Services.AddOptions<HhVacancyParserOptions>()
     .Bind(builder.Configuration.GetSection("HHParser"))
@@ -33,9 +26,7 @@ builder.Services.AddOptions<RabbitMqOptions>()
 builder.Services.AddSingleton<RabbitMqConnection>();
 builder.Services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
 
-builder.Services.AddSingleton<IRabbitMqConsumer, HHVacancySubscriptionCreateConsumer>();
-builder.Services.AddSingleton<IRabbitMqConsumer, HHVacancySubscriptionDeleteConsumer>();
-builder.Services.AddSingleton<IRabbitMqConsumer, HHUserUpdatedConsumer>();
+builder.Services.AddSingleton<IRabbitMqConsumer, HhParseRequestedConsumer>();
 
 builder.Services.AddHttpClient<HhVacancyHttpApiClient>((sp, client) =>
 {
@@ -44,15 +35,6 @@ builder.Services.AddHttpClient<HhVacancyHttpApiClient>((sp, client) =>
     client.DefaultRequestHeaders.UserAgent.ParseAdd(options.UserAgent);
 });
 
-
-builder.Services.AddHttpClient<ApiHttpClient>((sp, client) =>
-{
-    var apiOptions = sp.GetRequiredService<IOptions<ApiOptions>>().Value;
-    client.BaseAddress = new Uri(apiOptions.BackendApiUrl);
-    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiOptions.ApiKey);
-});
-
-builder.Services.AddHostedService<HhVacancyParserBackgroundService>();
 builder.Services.AddHostedService<RabbitMqBackgroundHostService>();
 
 await builder.Build().RunAsync();
