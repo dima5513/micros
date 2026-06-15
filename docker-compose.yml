@@ -86,7 +86,37 @@
         condition: service_healthy
     networks:
       - backend-network
-  
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: src/Micros.Scheduler/Dockerfile
+    container_name: scheduler
+    restart: always
+    environment:
+      DOTNET_ENVIRONMENT: Development
+
+      POSTGRES_HOST: backend-postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+
+      BACKEND_URL: "http://backend-api:8445"
+      S2S_API_KEY: ${S2S_API_KEY}
+    depends_on:
+      backend-postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - backend-network
+
   backend-postgres:
     image: postgres:16-alpine
     container_name: backend-postgres
