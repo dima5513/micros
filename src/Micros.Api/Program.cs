@@ -7,6 +7,7 @@ using Micros.Api.Infrastructure.Database;
 using Micros.Api.Infrastructure.ExceptionHandlers;
 using Micros.Api.Infrastructure.Jwt;
 using Micros.Api.Infrastructure.OpenApi;
+using Micros.Api.Infrastructure.Outbox;
 using Micros.Api.Infrastructure.PasswordHash;
 using Micros.Core.rabbitmq;
 using Micros.Core.Types;
@@ -64,6 +65,8 @@ builder.Services.AddOptions<RabbitMqOptions>()
 
 builder.Services.AddSingleton<RabbitMqConnection>();
 builder.Services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
+
+builder.Services.AddHostedService<OutboxProcesser>();
 
 var app = builder.Build();
 

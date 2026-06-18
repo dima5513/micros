@@ -14,10 +14,16 @@ public class RabbitMqPublisher(RabbitMqConnection connection) : IRabbitMqPublish
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
-    public async Task PublishAsync<T>(
+    public Task PublishAsync<T>(string exchange, string routingKey, T message, CancellationToken cancellationToken)
+    {
+        var body = JsonSerializer.SerializeToUtf8Bytes(message, JsonOptions);
+        return PublishRawAsync(exchange, routingKey, body, cancellationToken);
+    }
+
+    public async Task PublishRawAsync(
         string exchange,
         string routingKey,
-        T message,
+        byte[] body,
         CancellationToken cancellationToken)
     {
         await _lock.WaitAsync(cancellationToken);
@@ -31,8 +37,6 @@ public class RabbitMqPublisher(RabbitMqConnection connection) : IRabbitMqPublish
                 durable: true,
                 autoDelete: false,
                 cancellationToken: cancellationToken);
-
-            var body = JsonSerializer.SerializeToUtf8Bytes(message, JsonOptions);
 
             var props = new BasicProperties
             {
