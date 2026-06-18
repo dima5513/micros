@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Micros.Api.Infrastructure.Database;
+using Micros.Api.Infrastructure.Outbox;
 using Micros.Core.messages;
 using Micros.Core.rabbitmq;
 using Microsoft.EntityFrameworkCore;
@@ -8,12 +10,10 @@ namespace Micros.Api.Domains.User;
 public class UserService : IUserService
 {
     private readonly AppDbContext _db;
-    private readonly IRabbitMqPublisher _rabbitMqPublisher;
 
-    public UserService(AppDbContext db, IRabbitMqPublisher rabbitMqPublisher)
+    public UserService(AppDbContext db)
     {
         _db = db;
-        _rabbitMqPublisher = rabbitMqPublisher;
     }
 
     public async Task<UserEntity> GetById(Guid id)
@@ -47,16 +47,17 @@ public class UserService : IUserService
             user.TelegramId = newTelegramId;
         }
 
-        await _db.SaveChangesAsync();
 
         if (oldTelegramId != user.TelegramId)
         {
-            await _rabbitMqPublisher.PublishAsync(
-                exchange: HHUserTopology.Exchange,
-                routingKey: HHUserTopology.UpdateUserKey,
-                message: new HHUserUpdatedMessage(user.Id, user.TelegramId),
-                cancellationToken: CancellationToken.None
-            );
+            _db.OutboxMessages.Add(new OutboxMessageEntity
+            {
+                Exchange = HHUserTopology.Exchange,
+                RoutingKey = HHUserTopology.UpdateUserKey,
+                Payload = JsonSerializer.Serialize(new HHUserUpdatedMessage(user.Id, user.TelegramId))
+            });
         }
+
+        await _db.SaveChangesAsync();
     }
 }

@@ -1,5 +1,7 @@
-﻿using Micros.Api.Infrastructure.Authorize;
+﻿using System.Text.Json;
+using Micros.Api.Infrastructure.Authorize;
 using Micros.Api.Infrastructure.Database;
+using Micros.Api.Infrastructure.Outbox;
 using Micros.Core.messages;
 using Micros.Core.rabbitmq;
 using Microsoft.EntityFrameworkCore;
@@ -9,14 +11,13 @@ namespace Micros.Api.Domains.Subscription;
 public class SubscriptionService : ISubscriptionService
 {
     private readonly AppDbContext _db;
-    private readonly IRabbitMqPublisher _rabbitMqPublisher;
 
     private readonly IAuthorizeService _authorizeService;
 
-    public SubscriptionService(AppDbContext db, IRabbitMqPublisher rabbitMqPublisher, IAuthorizeService authorizeService)
+    public SubscriptionService(AppDbContext db,
+        IAuthorizeService authorizeService)
     {
         _db = db;
-        _rabbitMqPublisher = rabbitMqPublisher;
         _authorizeService = authorizeService;
     }
 
@@ -29,26 +30,27 @@ public class SubscriptionService : ISubscriptionService
 
         var subscription = new SubscriptionEntity
         {
+            Id = Guid.NewGuid(),
             Url = contract.Url,
             UserId = contract.UserId
         };
 
         _db.Subscriptions.Add(subscription);
 
-        await _db.SaveChangesAsync();
-
         var relationUser = await _db.Users
             .Where(u => u.Id == contract.UserId)
             .FirstAsync();
 
-        await _rabbitMqPublisher.PublishAsync(
-            exchange: HHSubscriptionTopology.Exchange,
-            routingKey: HHSubscriptionTopology.CreateSubscriptionKey,
-            message: new HHSubscriptionCreateMessage(
+        _db.OutboxMessages.Add(new OutboxMessageEntity
+        {
+            Exchange = HHSubscriptionTopology.Exchange,
+            RoutingKey = HHSubscriptionTopology.CreateSubscriptionKey,
+            Payload = JsonSerializer.Serialize(new HHSubscriptionCreateMessage(
                 subscription.Id, subscription.Url, relationUser.Id, relationUser.TelegramId
-            ),
-            cancellationToken: CancellationToken.None
-        );
+            ))
+        });
+
+        await _db.SaveChangesAsync();
 
         return subscription;
     }
@@ -61,17 +63,19 @@ public class SubscriptionService : ISubscriptionService
         {
             throw new SubscriptionNotFoundException(subscriptionId);
         }
-        
+
         _authorizeService.EnsureOwner(subscription, userId);
 
-        await _db.Subscriptions.Where(e => e.Id == subscriptionId).ExecuteDeleteAsync();
+        _db.Subscriptions.Remove(subscription);
 
-        await _rabbitMqPublisher.PublishAsync(
-            exchange: HHSubscriptionTopology.Exchange,
-            routingKey: HHSubscriptionTopology.DeleteSubscriptionKey,
-            message: new HHSubscriptionDeleteMessage(subscriptionId),
-            cancellationToken: CancellationToken.None
-        );
+        _db.OutboxMessages.Add(new OutboxMessageEntity
+        {
+            Exchange = HHSubscriptionTopology.Exchange,
+            RoutingKey = HHSubscriptionTopology.DeleteSubscriptionKey,
+            Payload = JsonSerializer.Serialize(new HHSubscriptionDeleteMessage(subscriptionId))
+        });
+
+        await _db.SaveChangesAsync();
     }
 
     public async Task<List<SubscriptionEntity>> GetForCurrentUserAsync(Guid userId)
