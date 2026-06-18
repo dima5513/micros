@@ -12,6 +12,8 @@ public class RabbitMqBackgroundHostService(
     IEnumerable<IRabbitMqConsumer> consumers
 ) : BackgroundService
 {
+    private const string DeadQueue = "micros.dead";
+    
     private readonly List<IChannel> _channels = [];
 
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -51,6 +53,9 @@ public class RabbitMqBackgroundHostService(
             exclusive: consumer.Settings.ExclusiveQueue, autoDelete: consumer.Settings.AutoDeleteQueue,
             arguments: consumer.Settings.QueueArguments, cancellationToken: ct);
         
+        await channel.QueueDeclareAsync(DeadQueue, durable: true, exclusive: false,
+            autoDelete: false, arguments: null, cancellationToken: ct);
+        
         await channel.QueueBindAsync(queue: consumer.QueueName, exchange: consumer.Exchange,
             routingKey: consumer.RoutingKey,
             cancellationToken: ct);
@@ -70,12 +75,52 @@ public class RabbitMqBackgroundHostService(
             }
             catch (Exception ex)
             {
-                logger.LogError("consumer: {Consumer}, exception: {Exception}", consumer.GetType().Name, ex);
-                await channel.BasicNackAsync(deliveryTag: args.DeliveryTag, multiple: false, requeue: true);
+                var retryCount = ReadRetryCount(args.BasicProperties.Headers);
+
+                if (retryCount < consumer.Settings.MaxRetries)
+                {
+                    logger.LogWarning(ex, "consumer {Consumer} failed, retry {Attempt}/{Max}",
+                        consumer.GetType().Name, retryCount + 1, consumer.Settings.MaxRetries);
+
+                    await Republish(channel, consumer.QueueName, args, retryCount + 1);
+                }
+                else
+                {
+                    logger.LogError(ex, "consumer {Consumer} exhausted {Max} retries, -> DLQ",
+                        consumer.GetType().Name, consumer.Settings.MaxRetries);
+
+                    await Republish(channel, DeadQueue, args, retryCount);
+                }
+
+                await channel.BasicAckAsync(args.DeliveryTag, multiple: false);
             }
         };
 
         await channel.BasicConsumeAsync(queue: consumer.QueueName, autoAck: false, consumer: basicConsumer,
             cancellationToken: ct);
     }
+    
+    private static async Task Republish(IChannel channel, string queue, BasicDeliverEventArgs args, int retryCount)
+    {
+        var headers = new Dictionary<string, object?>(args.BasicProperties.Headers ?? new Dictionary<string, object?>())
+        {
+            ["x-retry-count"] = retryCount
+        };
+
+        var props = new BasicProperties
+        {
+            Persistent = true,
+            ContentType = args.BasicProperties.ContentType,
+            Headers = headers
+        };
+
+        await channel.BasicPublishAsync(exchange: "", routingKey: queue,
+            mandatory: false, basicProperties: props, body: args.Body);
+    }
+
+    private static int ReadRetryCount(IDictionary<string, object?>? headers)
+        => headers is not null && headers.TryGetValue("x-retry-count", out var v) && v is not null
+            ? Convert.ToInt32(v)
+            : 0;
+
 }

@@ -10,5 +10,6 @@ public record RabbitMqConsumerSettings(
     bool AutoDeleteQueue = false,
     bool ExclusiveQueue = false,
     ushort PrefetchCount = 1,
-    IDictionary<string, object?>? QueueArguments = null
+    IDictionary<string, object?>? QueueArguments = null,
+    int MaxRetries = 5
 );
