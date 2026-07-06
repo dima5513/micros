@@ -33,7 +33,7 @@ builder.Services.AddHttpClient<HhVacancyHttpApiClient>((sp, client) =>
     var options = sp.GetRequiredService<IOptions<HhVacancyParserOptions>>().Value;
     client.BaseAddress = new Uri(options.HhHost);
     client.DefaultRequestHeaders.UserAgent.ParseAdd(options.UserAgent);
-});
+}).AddHhResilience();
 
 builder.Services.AddHostedService<RabbitMqBackgroundHostService>();
 
