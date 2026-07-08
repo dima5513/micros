@@ -1,11 +1,9 @@
-﻿using Micros.Api.Domains.Common.Exceptions;
+using Micros.Api.Domains.Common.Exceptions;
 using Micros.Api.Domains.Subscription;
 using Micros.Api.Domains.User;
 using Micros.Api.Infrastructure.Authorize;
 using Micros.Core.messages;
-using Micros.Core.rabbitmq;
 using Microsoft.EntityFrameworkCore;
-using NSubstitute;
 
 namespace Micros.Api.Tests;
 
@@ -19,11 +17,8 @@ public class SubscriptionServiceTests : IClassFixture<PostgresFixture>
     }
 
     [Fact]
-    public async Task CreateAsync_PersistsSubscription_AndPublishesEvent()
+    public async Task CreateAsync_PersistsSubscription_AndWritesOutboxMessage()
     {
-        // Arrange
-        var publisher = Substitute.For<IRabbitMqPublisher>();
-
         Guid userId;
 
         await using (var seedDb = _fixture.CreateDbContext())
@@ -44,12 +39,10 @@ public class SubscriptionServiceTests : IClassFixture<PostgresFixture>
         var url = $"https://hh.ru/search/vacancy?text={Guid.NewGuid()}";
 
         await using var db = _fixture.CreateDbContext();
-        var sut = new SubscriptionService(db, publisher, new AuthorizeService());
+        var sut = new SubscriptionService(db, new AuthorizeService());
 
-        // Act
         var created = await sut.CreateAsync(new CreateSubscriptionContract(url, userId));
 
-        // Assert — реально сохранилось в БД
         await using var verifyDb = _fixture.CreateDbContext();
         var stored = await verifyDb.Subscriptions.FirstOrDefaultAsync(s => s.Id == created.Id);
 
@@ -57,19 +50,17 @@ public class SubscriptionServiceTests : IClassFixture<PostgresFixture>
         Assert.Equal(url, stored!.Url);
         Assert.Equal(userId, stored.UserId);
 
-        // Assert — событие опубликовано ровно один раз
-        await publisher.Received(1).PublishAsync(
-            HHSubscriptionTopology.Exchange,
-            HHSubscriptionTopology.CreateSubscriptionKey,
-            Arg.Any<HHSubscriptionCreateMessage>(),
-            Arg.Any<CancellationToken>());
+        var outboxCount = await verifyDb.OutboxMessages.CountAsync(m =>
+            m.Exchange == HHSubscriptionTopology.Exchange &&
+            m.RoutingKey == HHSubscriptionTopology.CreateSubscriptionKey &&
+            m.Payload.Contains(created.Id.ToString()));
+
+        Assert.Equal(1, outboxCount);
     }
 
     [Fact]
     public async Task CreateAsync_DuplicateUrl_ThrowsSubscriptionUrlAlreadyExists()
     {
-        var publisher = Substitute.For<IRabbitMqPublisher>();
-
         var url = $"https://hh.ru/search/vacancy?text={Guid.NewGuid()}";
 
         Guid userId;
@@ -96,25 +87,23 @@ public class SubscriptionServiceTests : IClassFixture<PostgresFixture>
         }
 
         await using var db = _fixture.CreateDbContext();
-        var sut = new SubscriptionService(db, publisher, new AuthorizeService());
+        var sut = new SubscriptionService(db, new AuthorizeService());
 
         await Assert.ThrowsAsync<SubscriptionUrlAlreadyExistsException>(() =>
             sut.CreateAsync(new CreateSubscriptionContract(url, userId))
         );
 
-        await publisher.DidNotReceive().PublishAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<HHSubscriptionCreateMessage>(),
-            Arg.Any<CancellationToken>()
-        );
+        await using var verifyDb = _fixture.CreateDbContext();
+        var outboxCount = await verifyDb.OutboxMessages.CountAsync(m =>
+            m.RoutingKey == HHSubscriptionTopology.CreateSubscriptionKey &&
+            m.Payload.Contains(url));
+
+        Assert.Equal(0, outboxCount);
     }
 
     [Fact]
-    public async Task DeleteAsync_OwnerDeletesSubscription_RemovesAndPublishes()
+    public async Task DeleteAsync_OwnerDeletesSubscription_RemovesAndWritesOutboxMessage()
     {
-        var publisher = Substitute.For<IRabbitMqPublisher>();
-
         var url = $"https://hh.ru/search/vacancy?text={Guid.NewGuid()}";
 
         Guid userId;
@@ -142,7 +131,7 @@ public class SubscriptionServiceTests : IClassFixture<PostgresFixture>
         }
 
         await using var db = _fixture.CreateDbContext();
-        var sut = new SubscriptionService(db, publisher, new AuthorizeService());
+        var sut = new SubscriptionService(db, new AuthorizeService());
 
         await sut.DeleteAsync(subscriptionId, userId);
 
@@ -152,39 +141,36 @@ public class SubscriptionServiceTests : IClassFixture<PostgresFixture>
 
         Assert.Null(deletedSubscription);
 
-        await publisher.Received(1).PublishAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<HHSubscriptionDeleteMessage>(),
-            Arg.Any<CancellationToken>()
-        );
+        var outboxCount = await verifyDb.OutboxMessages.CountAsync(m =>
+            m.RoutingKey == HHSubscriptionTopology.DeleteSubscriptionKey &&
+            m.Payload.Contains(subscriptionId.ToString()));
+
+        Assert.Equal(1, outboxCount);
     }
 
     [Fact]
-    public async Task DeleteAsync_NotFound_ThrowsAndDoesNotPublish()
+    public async Task DeleteAsync_NotFound_ThrowsAndDoesNotWriteOutbox()
     {
-        var publisher = Substitute.For<IRabbitMqPublisher>();
-
         await using var db = _fixture.CreateDbContext();
-        var sut = new SubscriptionService(db, publisher, new AuthorizeService());
+        var sut = new SubscriptionService(db, new AuthorizeService());
+
+        var missingId = Guid.NewGuid();
 
         await Assert.ThrowsAsync<SubscriptionNotFoundException>(
-            () => sut.DeleteAsync(Guid.NewGuid(), Guid.NewGuid())
+            () => sut.DeleteAsync(missingId, Guid.NewGuid())
         );
 
-        await publisher.DidNotReceive().PublishAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<HHSubscriptionDeleteMessage>(),
-            Arg.Any<CancellationToken>()
-        );
+        await using var verifyDb = _fixture.CreateDbContext();
+        var outboxCount = await verifyDb.OutboxMessages.CountAsync(m =>
+            m.RoutingKey == HHSubscriptionTopology.DeleteSubscriptionKey &&
+            m.Payload.Contains(missingId.ToString()));
+
+        Assert.Equal(0, outboxCount);
     }
 
     [Fact]
-    public async Task DeleteAsync_NotOwner_ThrowsForbiddenAndDoesNotPublish()
+    public async Task DeleteAsync_NotOwner_ThrowsForbiddenAndDoesNotWriteOutbox()
     {
-        var publisher = Substitute.For<IRabbitMqPublisher>();
-
         var url = $"https://hh.ru/search/vacancy?text={Guid.NewGuid()}";
 
         Guid subscriptionId;
@@ -211,20 +197,19 @@ public class SubscriptionServiceTests : IClassFixture<PostgresFixture>
         }
 
         await using var db = _fixture.CreateDbContext();
-        var sut = new SubscriptionService(db, publisher, new AuthorizeService());
+        var sut = new SubscriptionService(db, new AuthorizeService());
 
         await Assert.ThrowsAsync<ForbiddenException>(() => sut.DeleteAsync(subscriptionId, Guid.NewGuid())
         );
-        
+
         await using var verifyDb = _fixture.CreateDbContext();
         var stillThere = await verifyDb.Subscriptions.FirstOrDefaultAsync(s => s.Id == subscriptionId);
         Assert.NotNull(stillThere);
 
-        await publisher.DidNotReceive().PublishAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<HHSubscriptionDeleteMessage>(),
-            Arg.Any<CancellationToken>()
-        );
+        var outboxCount = await verifyDb.OutboxMessages.CountAsync(m =>
+            m.RoutingKey == HHSubscriptionTopology.DeleteSubscriptionKey &&
+            m.Payload.Contains(subscriptionId.ToString()));
+
+        Assert.Equal(0, outboxCount);
     }
 }
