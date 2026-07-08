@@ -9,6 +9,7 @@ using Micros.Api.Infrastructure.Jwt;
 using Micros.Api.Infrastructure.OpenApi;
 using Micros.Api.Infrastructure.Outbox;
 using Micros.Api.Infrastructure.PasswordHash;
+using Micros.Api.Infrastructure.RateLimiting;
 using Micros.Core.rabbitmq;
 using Micros.Core.Types;
 using Microsoft.EntityFrameworkCore;
@@ -68,6 +69,8 @@ builder.Services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
 
 builder.Services.AddHostedService<OutboxProcesser>();
 
+builder.Services.AddAppRateLimiter();
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
@@ -93,6 +96,8 @@ app.UseExceptionHandler();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapControllers();
+app.UseRateLimiter();
+
+app.MapControllers().RequireRateLimiting(AppRateLimiter.BucketPolicy);
 
 app.Run();
