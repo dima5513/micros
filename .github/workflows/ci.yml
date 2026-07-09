@@ -16,5 +16,8 @@ jobs:
         with: 
           global-json-file: global.json
           
-      - name: Verify SDK
-        run: dotnet --info
+      - name: Restore
+        run: dotnet restore Micros.sln
+      
+      - name: Build
+        run: dotnet build Micros.sln --configuration Release --no-restore
