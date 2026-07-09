@@ -21,3 +21,10 @@ jobs:
       
       - name: Build
         run: dotnet build Micros.sln --configuration Release --no-restore
+        
+      - name: Test (unit)
+        run: >
+          dotnet test tests/Micros.HHParser.Tests/Micros.HHParser.Tests.csproj
+          --configuration Release
+          --no-build
+          --verbosity normal
