@@ -1,4 +1,5 @@
 # Micros Backend
+[![CI](https://github.com/dima5513/micros/actions/workflows/ci.yml/badge.svg)](https://github.com/dima5513/micros/actions/workflows/ci.yml)
 
 Бэкенд сервиса, который следит за поисками вакансий на hh.ru и шлёт пользователю уведомления в Telegram о новых вакансиях.
 
