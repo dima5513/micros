@@ -30,8 +30,8 @@ jobs:
           --verbosity normal
           
       - name: Tests-Api
-          run: >
-            dotnet test tests/Micros.Api.Tests/Micros.Api.Tests.csproj
-            --configuration Release
-            --no-build
-            --verbosity normal
+        run: >
+          dotnet test tests/Micros.Api.Tests/Micros.Api.Tests.csproj
+          --configuration Release
+          --no-build
+          --verbosity normal
