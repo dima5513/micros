@@ -22,9 +22,16 @@ jobs:
       - name: Build
         run: dotnet build Micros.sln --configuration Release --no-restore
         
-      - name: Test (unit)
+      - name: Tests-HHParser
         run: >
           dotnet test tests/Micros.HHParser.Tests/Micros.HHParser.Tests.csproj
           --configuration Release
           --no-build
           --verbosity normal
+          
+      - name: Tests-Api
+          run: >
+            dotnet test tests/Micros.Api.Tests/Micros.Api.Tests.csproj
+            --configuration Release
+            --no-build
+            --verbosity normal
