@@ -2,6 +2,7 @@
 using Micros.Api.Infrastructure.Authorize;
 using Micros.Api.Infrastructure.Database;
 using Micros.Api.Infrastructure.Outbox;
+using Micros.Core.logging;
 using Micros.Core.messages;
 using Micros.Core.rabbitmq;
 using Microsoft.EntityFrameworkCore;
@@ -47,7 +48,8 @@ public class SubscriptionService : ISubscriptionService
             RoutingKey = HHSubscriptionTopology.CreateSubscriptionKey,
             Payload = JsonSerializer.Serialize(new HHSubscriptionCreateMessage(
                 subscription.Id, subscription.Url, relationUser.Id, relationUser.TelegramId
-            ))
+            )),
+            CorrelationId = CorrelationIdContext.Current,
         });
 
         await _db.SaveChangesAsync();
@@ -72,7 +74,8 @@ public class SubscriptionService : ISubscriptionService
         {
             Exchange = HHSubscriptionTopology.Exchange,
             RoutingKey = HHSubscriptionTopology.DeleteSubscriptionKey,
-            Payload = JsonSerializer.Serialize(new HHSubscriptionDeleteMessage(subscriptionId))
+            Payload = JsonSerializer.Serialize(new HHSubscriptionDeleteMessage(subscriptionId)),
+            CorrelationId = CorrelationIdContext.Current,
         });
 
         await _db.SaveChangesAsync();

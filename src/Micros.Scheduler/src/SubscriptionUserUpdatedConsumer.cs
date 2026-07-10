@@ -16,10 +16,17 @@ public class SubscriptionUserUpdatedConsumer : IRabbitMqConsumer
     public string QueueName => "hh-parser.user.updated";
     public string RoutingKey => HHUserTopology.UpdateUserKey;
 
+    private readonly ILogger<SubscriptionUserUpdatedConsumer> _logger;
+
     public RabbitMqConsumerSettings Settings => new();
 
-    public SubscriptionUserUpdatedConsumer(IServiceScopeFactory scopeFactory) =>
+    public SubscriptionUserUpdatedConsumer(
+        IServiceScopeFactory scopeFactory,
+        ILogger<SubscriptionUserUpdatedConsumer> logger)
+    {
         _scopeFactory = scopeFactory;
+        _logger = logger;
+    }
 
     public async Task HandleAsync(string body, CancellationToken ct)
     {
@@ -50,6 +57,9 @@ public class SubscriptionUserUpdatedConsumer : IRabbitMqConsumer
 
                 await cronTickerManager.UpdateAsync(data.entity, ct);
             }
+
+            _logger.LogInformation("user {UserId} updated: {Count} tickers repointed to telegram {TelegramId}",
+                message.UserId, updatedCronTickerEntities.Count, message.TelegramId);
         }
     }
 }

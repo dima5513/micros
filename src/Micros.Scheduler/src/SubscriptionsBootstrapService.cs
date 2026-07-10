@@ -1,4 +1,4 @@
-using Micros.Core.messages;
+using Micros.Core.logging;
 using Microsoft.Extensions.Options;
 using TickerQ.Utilities;
 using TickerQ.Utilities.Entities;
@@ -7,9 +7,6 @@ using TickerQ.Utilities.Interfaces.Managers;
 
 namespace Micros.Scheduler;
 
-// При старте досоздаёт тикеры для подписок, которые есть в Api, но которых нет в расписании
-// (например, события Create, пропущенные пока Scheduler был выключен). Удалением сирот не занимается —
-// это делает SubscriptionDeleteConsumer. Идемпотентно: существующие Id пропускаются.
 public class SubscriptionsBootstrapService(
     IServiceScopeFactory scopeFactory,
     IOptions<SchedulerOptions> schedulerOptions,
@@ -20,6 +17,8 @@ public class SubscriptionsBootstrapService(
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
+        using var _ = CorrelationIdContext.Begin(CorrelationId.New());
+        
         try
         {
             await using var scope = scopeFactory.CreateAsyncScope();

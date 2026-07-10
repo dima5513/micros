@@ -1,4 +1,5 @@
 using DotNetEnv;
+using Micros.Core.logging;
 using Micros.Core.rabbitmq;
 using Micros.TgBot;
 using Microsoft.Extensions.Options;
@@ -7,6 +8,8 @@ using Telegram.Bot;
 Env.TraversePath().Load();
 
 var builder = Host.CreateApplicationBuilder(args);
+
+builder.Services.AddMicrosLogging(builder.Configuration,"Micros.TgBot");
 
 builder.Services.AddOptions<TelegramOptions>()
     .Bind(builder.Configuration)

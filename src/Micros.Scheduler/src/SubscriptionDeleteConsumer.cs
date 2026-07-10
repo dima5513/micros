@@ -15,17 +15,24 @@ public class SubscriptionDeleteConsumer : IRabbitMqConsumer
     public string QueueName => "hh-parser.subscription.delete";
     public string RoutingKey => HHSubscriptionTopology.DeleteSubscriptionKey;
 
+    private readonly ILogger<SubscriptionDeleteConsumer> _logger;
+
     public RabbitMqConsumerSettings Settings => new();
 
-    public SubscriptionDeleteConsumer(IServiceScopeFactory scopeFactory)
+    public SubscriptionDeleteConsumer(
+        IServiceScopeFactory scopeFactory,
+        ILogger<SubscriptionDeleteConsumer> logger)
     {
         _scopeFactory = scopeFactory;
+        _logger = logger;
     }
 
     public async Task HandleAsync(string body, CancellationToken ct)
     {
         var message = JsonSerializer.Deserialize<HHSubscriptionDeleteMessage>(body);
         if (message is null) return;
+
+        _logger.LogInformation("subscription delete: {SubscriptionId}", message.SubscriptionId);
 
         await using var scope = _scopeFactory.CreateAsyncScope();
 
@@ -34,7 +41,12 @@ public class SubscriptionDeleteConsumer : IRabbitMqConsumer
             .GetRequiredService<ITickerPersistenceProvider<TimeTickerEntity, CronTickerEntity>>();
 
         var exists = (await persistenceProvider.GetCronTickers(e => e.Id == message.SubscriptionId, ct)).Any();
-        if (!exists) return;
+        
+        if (!exists)
+        {
+            _logger.LogWarning("ticker {SubscriptionId} not found, nothing to delete", message.SubscriptionId);
+            return;
+        }
 
         await cronManager.DeleteAsync(message.SubscriptionId, ct);
     }

@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using DotNetEnv;
 using Micros.Core.api;
 using Micros.Core.config;
+using Micros.Core.logging;
 using Micros.Core.rabbitmq;
 using Micros.Scheduler;
 using Micros.Scheduler.Infrastructure.Database;
@@ -15,6 +16,9 @@ using TickerQ.EntityFrameworkCore.DependencyInjection;
 Env.TraversePath().Load();
 
 var builder = Host.CreateApplicationBuilder(args);
+
+
+builder.Services.AddMicrosLogging(builder.Configuration,"Micros.Scheduler");
 
 builder.Services.AddOptions<RabbitMqOptions>()
     .Bind(builder.Configuration).ValidateDataAnnotations().ValidateOnStart();
@@ -63,21 +67,20 @@ builder.Services.AddSingleton<IRabbitMqConsumer, SubscriptionUserUpdatedConsumer
 
 builder.Services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
 
+builder.Services.AddTransient<CorrelationIdHandler>();
+
 builder.Services.AddHttpClient<ApiHttpClient>((sp, client) =>
 {
     var apiOptions = sp.GetRequiredService<IOptions<ApiOptions>>().Value;
     client.BaseAddress = new Uri(apiOptions.BackendApiUrl);
     client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiOptions.ApiKey);
-});
+}).AddHttpMessageHandler<CorrelationIdHandler>();;
 
 builder.Services.AddHostedService<SubscriptionsBootstrapService>();
 builder.Services.AddHostedService<RabbitMqBackgroundHostService>();
 
 var host = builder.Build();
 
-// В Worker/generic host [ModuleInitializer] из source-gen может не выполниться,
-// и тогда [TickerFunction]-делегаты (карта "hh-parse" -> делегат) не регистрируются:
-// AddAsync с такой функцией молча не персистит, тикеры не срабатывают. Регистрируем явно.
 Micros.Scheduler.TickerQInstanceFactoryExtensions.Initialize();
 
 using (var scope = host.Services.CreateScope())

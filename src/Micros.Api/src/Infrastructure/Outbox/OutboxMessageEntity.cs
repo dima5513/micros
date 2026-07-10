@@ -8,6 +8,8 @@ public class OutboxMessageEntity
     public OutboxMessageStatus Status { get; set; }
     public required string Exchange { get; set; }
     public required string RoutingKey { get; set; }
+    
+    public string? CorrelationId { get; set; }
 }
 
 public enum OutboxMessageStatus

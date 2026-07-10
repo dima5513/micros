@@ -6,17 +6,22 @@ using Micros.Api.Infrastructure.Authorize;
 using Micros.Api.Infrastructure.Database;
 using Micros.Api.Infrastructure.ExceptionHandlers;
 using Micros.Api.Infrastructure.Jwt;
+using Micros.Api.Infrastructure.Logging;
 using Micros.Api.Infrastructure.OpenApi;
 using Micros.Api.Infrastructure.Outbox;
 using Micros.Api.Infrastructure.PasswordHash;
 using Micros.Api.Infrastructure.RateLimiting;
+using Micros.Core.logging;
 using Micros.Core.rabbitmq;
 using Micros.Core.Types;
 using Microsoft.EntityFrameworkCore;
+using Serilog;
 
 Env.TraversePath().Load();
 
 var builder = WebApplication.CreateBuilder();
+
+builder.Services.AddMicrosLogging(builder.Configuration,"Micros.Api");
 
 builder.Services.AddCors(options =>
 {
@@ -72,6 +77,10 @@ builder.Services.AddHostedService<OutboxProcesser>();
 builder.Services.AddAppRateLimiter();
 
 var app = builder.Build();
+
+app.UseMiddleware<CorrelationIdMiddleware>();
+
+app.UseSerilogRequestLogging();
 
 using (var scope = app.Services.CreateScope())
 {

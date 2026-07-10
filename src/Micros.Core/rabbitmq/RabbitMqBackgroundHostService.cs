@@ -1,4 +1,5 @@
 using System.Text;
+using Micros.Core.logging;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
@@ -66,6 +67,11 @@ public class RabbitMqBackgroundHostService(
 
         basicConsumer.ReceivedAsync += async (_, args) =>
         {
+
+            var correlationId = ReadCorrelationId(args.BasicProperties.Headers) ?? CorrelationId.New();
+
+            using var correlationIdScope = CorrelationIdContext.Begin(correlationId);
+            
             var message = Encoding.UTF8.GetString(args.Body.ToArray());
 
             try
@@ -122,5 +128,20 @@ public class RabbitMqBackgroundHostService(
         => headers is not null && headers.TryGetValue("x-retry-count", out var v) && v is not null
             ? Convert.ToInt32(v)
             : 0;
+
+    private static string? ReadCorrelationId(IDictionary<string, object?>? headers)
+    {
+        if (headers is null || !headers.TryGetValue(CorrelationId.HeaderName, out var value) || value is null)
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            byte[] bytes => Encoding.UTF8.GetString(bytes),
+            string text => text,
+            _ => value.ToString()
+        };
+    }
 
 }

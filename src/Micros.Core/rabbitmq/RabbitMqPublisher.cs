@@ -1,5 +1,6 @@
 ﻿using System.Text.Encodings.Web;
 using System.Text.Json;
+using Micros.Core.logging;
 using RabbitMQ.Client;
 
 namespace Micros.Core.rabbitmq;
@@ -43,6 +44,16 @@ public class RabbitMqPublisher(RabbitMqConnection connection) : IRabbitMqPublish
                 Persistent = true,
                 ContentType = "application/json"
             };
+
+            var correlationId = CorrelationIdContext.Current;
+
+            if (!string.IsNullOrWhiteSpace(correlationId))
+            {
+                props.Headers = new Dictionary<string, object?>
+                {
+                    [CorrelationId.HeaderName] = correlationId
+                };
+            }
 
             await _channel.BasicPublishAsync(
                 exchange: exchange,

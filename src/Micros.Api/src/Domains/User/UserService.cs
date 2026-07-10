@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Micros.Api.Infrastructure.Database;
 using Micros.Api.Infrastructure.Outbox;
+using Micros.Core.logging;
 using Micros.Core.messages;
 using Micros.Core.rabbitmq;
 using Microsoft.EntityFrameworkCore;
@@ -54,7 +55,8 @@ public class UserService : IUserService
             {
                 Exchange = HHUserTopology.Exchange,
                 RoutingKey = HHUserTopology.UpdateUserKey,
-                Payload = JsonSerializer.Serialize(new HHUserUpdatedMessage(user.Id, user.TelegramId))
+                Payload = JsonSerializer.Serialize(new HHUserUpdatedMessage(user.Id, user.TelegramId)),
+                CorrelationId = CorrelationIdContext.Current,
             });
         }
 

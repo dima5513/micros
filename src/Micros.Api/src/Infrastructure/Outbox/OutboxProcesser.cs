@@ -1,5 +1,6 @@
 ﻿using System.Text;
 using Micros.Api.Infrastructure.Database;
+using Micros.Core.logging;
 using Micros.Core.rabbitmq;
 using Microsoft.EntityFrameworkCore;
 
@@ -58,6 +59,8 @@ public class OutboxProcesser : BackgroundService
         {
             foreach (var message in messages)
             {
+                using var correlationIdScope = CorrelationIdContext.Begin(message.CorrelationId ?? CorrelationId.New());
+                
                 await _rabbitMqPublisher.PublishRawAsync(
                     exchange: message.Exchange,
                     routingKey: message.RoutingKey,

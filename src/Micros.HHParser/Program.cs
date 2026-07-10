@@ -1,4 +1,5 @@
 using DotNetEnv;
+using Micros.Core.logging;
 using Micros.Core.rabbitmq;
 using Micros.Core.redis;
 using Micros.HHParser;
@@ -7,6 +8,8 @@ using Microsoft.Extensions.Options;
 Env.TraversePath().Load();
 
 var builder = Host.CreateApplicationBuilder(args);
+
+builder.Services.AddMicrosLogging(builder.Configuration,"Micros.HHParser");
 
 builder.Services.AddOptions<HhVacancyParserOptions>()
     .Bind(builder.Configuration.GetSection("HHParser"))

@@ -17,16 +17,22 @@ public class SubscriptionCreateConsumer : IRabbitMqConsumer
 
     private readonly SchedulerOptions _schedulerOptions;
 
+    private readonly ILogger<SubscriptionCreateConsumer> _logger;
+
     public string Exchange => HHSubscriptionTopology.Exchange;
     public string QueueName => "hh-parser.subscription.create";
     public string RoutingKey => HHSubscriptionTopology.CreateSubscriptionKey;
 
     public RabbitMqConsumerSettings Settings => new();
 
-    public SubscriptionCreateConsumer(IServiceScopeFactory scopeFactory, IOptions<SchedulerOptions> schedulerOptions)
+    public SubscriptionCreateConsumer(
+        IServiceScopeFactory scopeFactory,
+        IOptions<SchedulerOptions> schedulerOptions,
+        ILogger<SubscriptionCreateConsumer> logger)
     {
         _scopeFactory = scopeFactory;
         _schedulerOptions = schedulerOptions.Value;
+        _logger = logger;
     }
 
     public async Task HandleAsync(string body, CancellationToken ct)
@@ -34,17 +40,22 @@ public class SubscriptionCreateConsumer : IRabbitMqConsumer
         var message = JsonSerializer.Deserialize<HHSubscriptionCreateMessage>(body);
         if (message is null) return;
 
+        _logger.LogInformation("subscription create: {SubscriptionId} for user {UserId}", message.SubscriptionId,
+            message.UserId);
+
         await using var scope = _scopeFactory.CreateAsyncScope();
 
         var cronManager = scope.ServiceProvider.GetRequiredService<ICronTickerManager<CronTickerEntity>>();
         var persistenceProvider = scope.ServiceProvider
             .GetRequiredService<ITickerPersistenceProvider<TimeTickerEntity, CronTickerEntity>>();
 
-        // Create несёт снапшот подписки на момент создания. Если тикер с этим Id уже есть — это
-        // повторная доставка; перезаписывать нельзя, иначе откатим более свежий UserUpdated (lost update).
         var exists = (await persistenceProvider.GetCronTickers(e => e.Id == message.SubscriptionId, ct)).Any();
-        if (exists) return;
-
+        if (exists)
+        {
+            _logger.LogInformation("ticker {SubscriptionId} already exists, skip (redelivery)", message.SubscriptionId);
+            return;
+        }
+        
         var result = await cronManager.AddAsync(new CronTickerEntity
         {
             Id = message.SubscriptionId,
@@ -54,8 +65,7 @@ public class SubscriptionCreateConsumer : IRabbitMqConsumer
                 new HhParsePayload(message.SubscriptionId, message.Url, message.UserId, message.TelegramId))
         }, ct);
 
-        // AddAsync не бросает на ошибку валидации (cron/функция) — возвращает неуспешный результат.
-        // Бросаем сами, чтобы хост залогировал и вернул сообщение в очередь, а не проглотил молча.
+
         if (!result.IsSucceeded)
             throw result.Exception
                   ?? new InvalidOperationException($"AddAsync failed for ticker {message.SubscriptionId}");

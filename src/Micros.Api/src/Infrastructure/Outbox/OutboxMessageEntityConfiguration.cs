@@ -28,5 +28,9 @@ public class OutboxMessageEntityConfiguration : IEntityTypeConfiguration<OutboxM
         builder
             .HasIndex(e => e.OccurredOn)
             .HasFilter("status = 'created'");
+        
+        builder
+            .Property(e => e.CorrelationId)
+            .HasMaxLength(64);
     }
 }

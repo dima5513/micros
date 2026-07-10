@@ -1,6 +1,7 @@
 ﻿using Micros.Core.messages;
 using Micros.Core.rabbitmq;
 using TickerQ.Utilities.Base;
+using Micros.Core.logging;
 
 namespace Micros.Scheduler;
 
@@ -19,6 +20,8 @@ public class HhParseCronTickers
     [TickerFunction("hh-parse")]
     public async Task HhParseCronTickerFunc(TickerFunctionContext<HhParsePayload> context, CancellationToken ct)
     {
+        using var _ = CorrelationIdContext.Begin(CorrelationId.New());
+        
         var payload = context.Request;
 
         _logger.LogInformation("hh-parse tick: publishing HhParseRequested for {SubscriptionId}", payload.SubscriptionId);
