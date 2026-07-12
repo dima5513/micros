@@ -31,21 +31,33 @@ public class HhParseRequestedConsumer(IServiceScopeFactory scopeFactory, ILogger
 
             var db = await redis.GetDatabaseAsync();
 
-            var stored = await db.StringGetAsync($"hh:watermark:{request.SubscriptionId}");
-            DateTimeOffset? latest = stored.HasValue ? DateTimeOffset.Parse(stored!) : null;
-            DateTimeOffset? newest = null;
+            var seenKey = $"hh:seen:{request.SubscriptionId}";
+            var firstRun = !await db.KeyExistsAsync(seenKey);
+
+            var host = apiClient.ResolveHost(request.Url);
 
             var query = HttpUtility.ParseQueryString(new Uri(request.Url).Query);
-            query["search_period"] = "1";
+            query["search_period"] = options.SearchPeriodDays.ToString();
 
-            await foreach (var item in apiClient.SearchHtmlAsync(query, ct))
+            var createdAfter = DateTimeOffset.UtcNow.AddDays(-options.SearchPeriodDays);
+
+            var found = 0;
+            var republished = 0;
+
+            await foreach (var item in apiClient.SearchHtmlAsync(host, query, ct))
             {
-                if (newest is null || item.CreationTime > newest) newest = item.CreationTime;
+                found++;
 
-                if (latest is null) continue;                 // первый прогон — только baseline, не спамим
-                if (item.CreationTime <= latest) continue;
+                if (!await db.SetAddAsync(seenKey, item.VacancyId)) continue;
+                if (firstRun) continue;
 
-                logger.LogInformation("fresh vacancy {Item}", item);
+                if (item.CreationTime < createdAfter)
+                {
+                    republished++;
+                    continue;
+                }
+
+                logger.LogInformation("fresh vacancy {VacancyId} {Name}", item.VacancyId, item.Name);
 
                 if (request.TelegramId is not null)
                     await publisher.PublishAsync(
@@ -57,12 +69,16 @@ public class HhParseRequestedConsumer(IServiceScopeFactory scopeFactory, ILogger
                             Name: item.Name,
                             TelegramId: (long)request.TelegramId,
                             CreationTime: item.CreationTime,
-                            Url: $"{options.HhHost}vacancy/{item.VacancyId}"),
+                            Url: $"{host}vacancy/{item.VacancyId}"),
                         cancellationToken: ct);
             }
 
-            if (newest is not null && (latest is null || newest > latest))
-                await db.StringSetAsync($"hh:watermark:{request.SubscriptionId}", newest.Value.ToString("O"));
+            if (found > 0)
+                await db.KeyExpireAsync(seenKey, TimeSpan.FromDays(30));
+
+            logger.LogInformation(
+                "parse finished for {SubscriptionId}: {Found} in feed, {Republished} republished skipped, first run {FirstRun}",
+                request.SubscriptionId, found, republished, firstRun);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

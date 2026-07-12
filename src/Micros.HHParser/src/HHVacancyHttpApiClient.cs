@@ -4,14 +4,35 @@ using System.Text.Json;
 using System.Web;
 using AngleSharp.Html.Dom;
 using AngleSharp.Html.Parser;
+using Microsoft.Extensions.Options;
 
 namespace Micros.HHParser;
 
-public class HhVacancyHttpApiClient(HttpClient httpClient, ILogger<HhVacancyHttpApiClient> logger)
+public class HhVacancyHttpApiClient(
+    HttpClient httpClient,
+    IOptions<HhVacancyParserOptions> options,
+    ILogger<HhVacancyHttpApiClient> logger)
 {
     private static readonly HtmlParser HtmlParser = new();
 
+    private readonly string rootDomain = new Uri(options.Value.HhHost).Host;
+
+    public Uri ResolveHost(string subscriptionUrl)
+    {
+        var uri = new Uri(subscriptionUrl);
+
+        var allowed = uri.Scheme == Uri.UriSchemeHttps
+                      && (uri.Host.Equals(rootDomain, StringComparison.OrdinalIgnoreCase)
+                          || uri.Host.EndsWith($".{rootDomain}", StringComparison.OrdinalIgnoreCase));
+
+        if (!allowed)
+            throw new InvalidOperationException($"host {uri.Scheme}://{uri.Host} is not allowed, expected {rootDomain}");
+
+        return new Uri($"https://{uri.Host}/");
+    }
+
     public async IAsyncEnumerable<HhVacancyItem> SearchHtmlAsync(
+        Uri host,
         NameValueCollection query,
         [EnumeratorCancellation] CancellationToken ct
     )
@@ -30,7 +51,7 @@ public class HhVacancyHttpApiClient(HttpClient httpClient, ILogger<HhVacancyHttp
             q["page"] = page.ToString();
 
 
-            var response = await GetHhVacancies(q, ct);
+            var response = await GetHhVacancies(host, q, ct);
 
             if (response is null) yield break;
 
@@ -55,9 +76,9 @@ public class HhVacancyHttpApiClient(HttpClient httpClient, ILogger<HhVacancyHttp
         }
     }
 
-    private async Task<HhVacanciesResponse?> GetHhVacancies(NameValueCollection query, CancellationToken ct)
+    private async Task<HhVacanciesResponse?> GetHhVacancies(Uri host, NameValueCollection query, CancellationToken ct)
     {
-        var html = await httpClient.GetStringAsync($"search/vacancy?{query}", cancellationToken: ct);
+        var html = await httpClient.GetStringAsync(new Uri(host, $"search/vacancy?{query}"), cancellationToken: ct);
 
         using var doc = await HtmlParser.ParseDocumentAsync(html);
 
